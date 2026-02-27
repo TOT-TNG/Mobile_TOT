@@ -33,15 +33,27 @@ dependencies:
   http: ^1.2.0
   shared_preferences: ^2.2.2
   network_info_plus: ^5.0.3
+  signalr_netcore: ^1.4.3
+  intl: ^0.18.0
+  flutter_staggered_animations: ^1.1.1
+  badges: ^3.0.1
+  udp : ^5.0.2
+  fl_chart: ^0.68.0
+  flutter_secure_storage: ^9.2.2
+  visibility_detector: ^0.4.0
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
   permission_handler: ^11.0.0
+  path_provider: ^2.1.1
+  excel: ^2.0.0-null-safety-3
+  google_fonts: ^6.2.1
+  
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-
+  flutter_launcher_icons: ^0.13.1
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is
   # activated in the `analysis_options.yaml` file located at the root of your
@@ -59,6 +71,8 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+  assets:
+    - assets/images/logo_agv.png
 
   # To add assets to your application, add an assets section, like this:
   # assets:

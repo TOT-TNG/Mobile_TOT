@@ -1,32 +1,51 @@
+//import 'package:app_tot/callAGVscreen.dart';
 import 'package:flutter/material.dart';
-import 'package:app_tot/cancel_task_screen.dart';
-import 'package:app_tot/history_screen.dart';
 import 'package:app_tot/task_execute_screen.dart';
-import 'package:app_tot/material_screen.dart';
+import 'package:app_tot/received_goods_screen.dart';
+import 'package:app_tot/login_screen.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:app_tot/setting_screen.dart';
+import 'package:app_tot/profile_screen.dart';
+import 'package:app_tot/history_screen.dart';
+import 'package:app_tot/agv_screen.dart';
+import 'package:app_tot/agv_activity_stats_screen.dart'; // Thêm import cho màn hình thống kê
+import 'package:app_tot/task-queue_screen.dart';
 
-// Placeholder cho màn hình Nhận Hàng
-class ReceiveGoodsScreen extends StatelessWidget {
-  const ReceiveGoodsScreen({super.key});
+class DashboardScreen extends StatefulWidget {
+  const DashboardScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Nhận Hàng'),
-        backgroundColor: Colors.blue,
-      ),
-      body: const Center(
-        child: Text(
-          'Màn hình Nhận Hàng',
-          style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-        ),
-      ),
-    );
-  }
+  _DashboardScreenState createState() => _DashboardScreenState();
 }
 
-class DashboardScreen extends StatelessWidget {
-  const DashboardScreen({super.key});
+class _DashboardScreenState extends State<DashboardScreen> {
+  String _name = 'Unknown';
+  String _maNS = 'Unknown';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUserInfo();
+  }
+
+  Future<void> _loadUserInfo() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _name = prefs.getString('name') ?? 'Unknown';
+      _maNS = prefs.getString('maNS') ?? 'Unknown';
+    });
+  }
+
+  Future<void> _logout(BuildContext context) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('role');
+
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (context) => const LoginScreen()),
+      (Route<dynamic> route) => false,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -48,33 +67,59 @@ class DashboardScreen extends StatelessWidget {
             ),
           ),
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.logout, color: Colors.white),
+            onPressed: () => _logout(context),
+          ),
+        ],
       ),
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Thanh tìm kiếm
+          // Khu vực thông tin người dùng
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
-            child: TextField(
-              decoration: InputDecoration(
-                hintText: 'Tìm kiếm...',
-                prefixIcon: const Icon(Icons.search, color: Colors.grey),
-                suffixIcon: const Icon(Icons.filter_list, color: Colors.grey),
-                filled: true,
-                fillColor: Colors.white,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(15.0),
-                  borderSide: BorderSide.none,
+            child: Row(
+              children: [
+                // Icon user
+                Container(
+                  padding: const EdgeInsets.all(8.0),
+                  decoration: BoxDecoration(
+                    color: Colors.blue[800],
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.person,
+                    size: 40,
+                    color: Colors.white,
+                  ),
                 ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(15.0),
-                  borderSide: const BorderSide(color: Colors.grey, width: 1.0),
+                const SizedBox(width: 12.0),
+                // Thông tin người dùng
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _name,
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black87,
+                        ),
+                      ),
+                      Text(
+                        'Mã NS: $_maNS',
+                        style: const TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(15.0),
-                  borderSide: const BorderSide(color: Colors.blue, width: 2.0),
-                ),
-              ),
+              ],
             ),
           ),
           // Tiêu đề "Hệ thống quản lý"
@@ -129,30 +174,30 @@ class DashboardScreen extends StatelessWidget {
                   ),
                   _buildGridItem(
                     context,
-                    Icons.description,
-                    'Chi Tiết Đơn Hàng',
+                    Icons.drive_eta_outlined,
+                    'Quản lý AGV',
                     Colors.green,
                     onTap: () {
-                      /*Navigator.push(
+                      Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (context) => const MaterialTasksScreen(),
+                          builder: (context) => const AGVManagementScreen(),
                         ),
-                      );*/
+                      );
                     },
                   ),
                   _buildGridItem(
                     context,
-                    Icons.cancel,
-                    'Hủy Giao Hàng',
+                    Icons.list_rounded,
+                    'Danh sách lệnh',
                     Colors.red,
                     onTap: () {
-                      /*Navigator.push(
+                      Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (context) => const CancelTaskScreen(),
+                          builder: (context) => const TaskQueueScreen(),
                         ),
-                      );*/
+                      );
                     },
                   ),
                   _buildGridItem(
@@ -161,12 +206,12 @@ class DashboardScreen extends StatelessWidget {
                     'Lịch Sử Giao Hàng',
                     Colors.orange,
                     onTap: () {
-                      /*Navigator.push(
+                      Navigator.push(
                         context,
                         MaterialPageRoute(
                           builder: (context) => const HistoryScreen(),
                         ),
-                      );*/
+                      );
                     },
                   ),
                   _buildGridItem(
@@ -175,8 +220,11 @@ class DashboardScreen extends StatelessWidget {
                     'Cài Đặt',
                     Colors.grey,
                     onTap: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Đã nhấn vào Cài Đặt')),
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const SettingsScreen(),
+                        ),
                       );
                     },
                   ),
@@ -209,12 +257,18 @@ class DashboardScreen extends StatelessWidget {
         currentIndex: 0,
         onTap: (index) {
           if (index == 1) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Chuyển đến màn hình Thống Kê')),
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const AGVActivityStatsScreen(),
+              ),
             );
           } else if (index == 2) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Chuyển đến màn hình Hồ Sơ')),
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const ProfileScreen(),
+              ),
             );
           }
         },
