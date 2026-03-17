@@ -1,5 +1,7 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'team_mapping.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -13,13 +15,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String _tenPhongBan = 'Unknown';
   String _userId = '';
   String _maChiNhanh = 'Unknown';
-  List<String> _teams = [];
-  Set<String> _tempSelectedTeams = {};
-  Set<String> _selectedTeams = {};
-  bool _isEditing = false;
-  bool _isSaved = false;
-  String? _successMessage;
+  String _siteId = 'default';
+  static const String _mappingEditPassword = 'TNG12345';
+
+  List<TeamMapping> _teamMappings = [];
+
   bool _isUserInfoLoaded = false;
+  bool _isEditingMapping = false;
+  String? _successMessage;
 
   @override
   void initState() {
@@ -27,10 +30,58 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _initializeData();
   }
 
+  String normalizeLatinKey(String input, {bool upper = true}) {
+    var s = input.trim();
+
+    s = s.replaceAll('Đ', 'D').replaceAll('đ', 'd');
+
+    const Map<String, String> vietnameseMap = {
+      'á':'a','à':'a','ả':'a','ã':'a','ạ':'a',
+      'ă':'a','ắ':'a','ằ':'a','ẳ':'a','ẵ':'a','ặ':'a',
+      'â':'a','ấ':'a','ầ':'a','ẩ':'a','ẫ':'a','ậ':'a',
+      'Á':'A','À':'A','Ả':'A','Ã':'A','Ạ':'A',
+      'Ă':'A','Ắ':'A','Ằ':'A','Ẳ':'A','Ẵ':'A','Ặ':'A',
+      'Â':'A','Ấ':'A','Ầ':'A','Ẩ':'A','Ẫ':'A','Ậ':'A',
+
+      'é':'e','è':'e','ẻ':'e','ẽ':'e','ẹ':'e',
+      'ê':'e','ế':'e','ề':'e','ể':'e','ễ':'e','ệ':'e',
+      'É':'E','È':'E','Ẻ':'E','Ẽ':'E','Ẹ':'E',
+      'Ê':'E','Ế':'E','Ề':'E','Ể':'E','Ễ':'E','Ệ':'E',
+
+      'í':'i','ì':'i','ỉ':'i','ĩ':'i','ị':'i',
+      'Í':'I','Ì':'I','Ỉ':'I','Ĩ':'I','Ị':'I',
+
+      'ó':'o','ò':'o','ỏ':'o','õ':'o','ọ':'o',
+      'ô':'o','ố':'o','ồ':'o','ổ':'o','ỗ':'o','ộ':'o',
+      'ơ':'o','ớ':'o','ờ':'o','ở':'o','ỡ':'o','ợ':'o',
+      'Ó':'O','Ò':'O','Ỏ':'O','Õ':'O','Ọ':'O',
+      'Ô':'O','Ố':'O','Ồ':'O','Ổ':'O','Ỗ':'O','Ộ':'O',
+      'Ơ':'O','Ớ':'O','Ờ':'O','Ở':'O','Ỡ':'O','Ợ':'O',
+
+      'ú':'u','ù':'u','ủ':'u','ũ':'u','ụ':'u',
+      'ư':'u','ứ':'u','ừ':'u','ử':'u','ữ':'u','ự':'u',
+      'Ú':'U','Ù':'U','Ủ':'U','Ũ':'U','Ụ':'U',
+      'Ư':'U','Ứ':'U','Ừ':'U','Ử':'U','Ữ':'U','Ự':'U',
+
+      'ý':'y','ỳ':'y','ỷ':'y','ỹ':'y','ỵ':'y',
+      'Ý':'Y','Ỳ':'Y','Ỷ':'Y','Ỹ':'Y','Ỵ':'Y',
+    };
+
+    final buffer = StringBuffer();
+    for (final ch in s.split('')) {
+      buffer.write(vietnameseMap[ch] ?? ch);
+    }
+
+    s = buffer.toString();
+    s = s.replaceAll(RegExp(r'\s+'), ' ');
+
+    return upper ? s.toUpperCase() : s;
+  }
+
   Future<void> _initializeData() async {
     await _loadUserInfo();
-    _loadTeams();
-    await _loadSelectedTeams();
+    await _loadTeamMappings();
+
     if (mounted) {
       setState(() {
         _isUserInfoLoaded = true;
@@ -38,64 +89,181 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  Future<bool> _showPasswordDialog() async {
+  final passwordController = TextEditingController();
+  String? errorText;
+  bool obscureText = true;
+
+  final result = await showDialog<bool>(
+    context: context,
+    barrierDismissible: false,
+    builder: (context) {
+      return StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            title: const Text('Xác thực kỹ thuật'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Vui lòng nhập mật khẩu để chỉnh sửa mapping.',
+                  style: TextStyle(fontSize: 14),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: passwordController,
+                  obscureText: obscureText,
+                  autofocus: true,
+                  decoration: InputDecoration(
+                    labelText: 'Mật khẩu',
+                    errorText: errorText,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        obscureText ? Icons.visibility_off : Icons.visibility,
+                      ),
+                      onPressed: () {
+                        setDialogState(() {
+                          obscureText = !obscureText;
+                        });
+                      },
+                    ),
+                  ),
+                  onSubmitted: (_) {
+                    final input = passwordController.text.trim();
+                    if (input == _mappingEditPassword) {
+                      Navigator.pop(context, true);
+                    } else {
+                      setDialogState(() {
+                        errorText = 'Mật khẩu không đúng';
+                      });
+                    }
+                  },
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Hủy'),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  final input = passwordController.text.trim();
+                  if (input == _mappingEditPassword) {
+                    Navigator.pop(context, true);
+                  } else {
+                    setDialogState(() {
+                      errorText = 'Mật khẩu không đúng';
+                    });
+                  }
+                },
+                child: const Text('Xác nhận'),
+              ),
+            ],
+          );
+        },
+      );
+    },
+  );
+
+  return result == true;
+}
+
+  Future<void> _authenticateAndStartEditing() async {
+  final ok = await _showPasswordDialog();
+  if (!ok) return;
+
+  if (mounted) {
+    setState(() {
+      _isEditingMapping = true;
+    });
+  }
+}
+
+Future<void> _authenticateAndAddMapping() async {
+  final ok = await _showPasswordDialog();
+  if (!ok) return;
+
+  if (!_isEditingMapping) {
+    setState(() {
+      _isEditingMapping = true;
+    });
+  }
+
+  _addMappingRow();
+}
+
   Future<void> _loadUserInfo() async {
     final prefs = await SharedPreferences.getInstance();
+
+    final rawSiteId = prefs.getString('tenDonVi') ?? '';
     setState(() {
       _name = prefs.getString('name') ?? 'Unknown';
       _tenPhongBan = prefs.getString('tenPhongBan') ?? 'Unknown';
       _userId = prefs.getString('maNS') ?? '';
       _maChiNhanh = prefs.getString('maChiNhanh') ?? 'Unknown';
+      _siteId = normalizeLatinKey(rawSiteId, upper: false).trim().isEmpty
+          ? 'default'
+          : normalizeLatinKey(rawSiteId, upper: false).trim();
     });
-    print('Loaded user info - name: "$_name", tenPhongBan: "$_tenPhongBan", userId: "$_userId", maChiNhanh: "$_maChiNhanh"');
+
+    print('Loaded user info - name: "$_name", tenPhongBan: "$_tenPhongBan", userId: "$_userId", maChiNhanh: "$_maChiNhanh", siteId: "$_siteId"');
   }
 
-  void _loadTeams() {
-    // Danh sách tổ cố định từ yêu cầu
-    /*_teams = [
-      '15', '20-1', '11', '03', '13', '17', '21', '40-2', '42-1', '23',
-      '19', '05', '08', '10', '41-1', '09', '07', '06', '14', '36-2',
-      '41-2', '40-1', '22', '16', '02', '38-1', '27', '04', '01-1', '18',
-      '12', '39', '24', '29', '30', '31-2', '26', '31-1', '36-1', '35',
-      '25', '32'
-    ];*/
-    _teams = [
-      '1', '2', '3', '4', '5', '6', '7', '8', '9', '10',
-      '11', '12', '13', '14', '15', '16', '17', '18', '19', '20',
-      '21', '22', '23', '24', '25', '26', '27', '28', '29', '30',
-      '31', '32', '33', '34', '35', '36', '37', '38', '39', '40',
-      '41','42'
-    ];
-    setState(() {
-      _teams = _teams;
-    });
-    print('Loaded teams: $_teams');
+  String get _mappingPrefsKey {
+    final uid = _userId.isEmpty ? 'guest' : _userId;
+    final sid = _siteId.isEmpty ? 'default' : _siteId;
+    return 'team_mappings_${uid}_$sid';
   }
 
-  Future<void> _loadSelectedTeams() async {
+  Future<void> _loadTeamMappings() async {
     if (_userId.isEmpty) {
-      print('UserId is empty, attempting to reload user info');
-      await _loadUserInfo();
-      if (_userId.isEmpty) {
-        print('UserId still empty, navigating to login');
-        _navigateToLogin();
-        return;
+      print('UserId empty, cannot load mappings');
+      return;
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_mappingPrefsKey);
+
+    if (raw == null || raw.isEmpty) {
+      setState(() {
+        _teamMappings = [];
+      });
+      print('No saved team mappings');
+      return;
+    }
+
+    try {
+      final List<dynamic> decoded = jsonDecode(raw);
+      final mappings = decoded
+          .map((e) => TeamMapping.fromJson(Map<String, dynamic>.from(e)))
+          .where((e) => e.label.trim().isNotEmpty && e.line >= 1 && e.line <= 50)
+          .toList();
+
+      mappings.sort((a, b) => a.line.compareTo(b.line));
+
+      if (mounted) {
+        setState(() {
+          _teamMappings = mappings;
+        });
+      }
+
+      //print('Loaded team mappings: ${mappings.map((e) => "${e.label} -> ${e.line}").toList()}');
+      print('Loaded team mappings: ${mappings.map((e) => "${e.label} -> ${e.line}").toList()}');
+    } catch (e) {
+      print('Load team mappings error: $e');
+      if (mounted) {
+        setState(() {
+          _teamMappings = [];
+        });
       }
     }
-    final prefs = await SharedPreferences.getInstance();
-    final savedTeams = prefs.getStringList('confirmed_teams_$_userId') ?? [];
-    final validTeams = savedTeams.where((team) => _teams.contains(team)).toSet();
-    if (mounted) {
-      setState(() {
-        _selectedTeams = validTeams;
-        _tempSelectedTeams = validTeams;
-        _isSaved = true;
-        _isEditing = false;
-      });
-    }
-    print('Loaded selected teams for user $_userId: $_selectedTeams');
   }
 
-  Future<void> _saveSelectedTeams() async {
+  Future<void> _saveTeamMappings() async {
     if (_userId.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -109,112 +277,274 @@ class _SettingsScreenState extends State<SettingsScreen> {
       );
       return;
     }
+
+    final validMappings = _teamMappings
+        .where((e) => e.label.trim().isNotEmpty && e.line >= 1 && e.line <= 50)
+        .map((e) => TeamMapping(label: e.label.trim(), line: e.line))
+        .toList();
+
+    final labelKeys = validMappings
+        .map((e) => normalizeLatinKey(e.label, upper: false).trim())
+        .toList();
+
+    if (labelKeys.length != labelKeys.toSet().length) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Tên tổ đang bị trùng. Vui lòng kiểm tra lại.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    final lines = validMappings.map((e) => e.line).toList();
+    if (lines.length != lines.toSet().length) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Số line đang bị trùng. Vui lòng kiểm tra lại.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    validMappings.sort((a, b) => a.line.compareTo(b.line));
+
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList('confirmed_teams_$_userId', _selectedTeams.toList());
+    await prefs.setString(
+      _mappingPrefsKey,
+      jsonEncode(validMappings.map((e) => e.toJson()).toList()),
+    );
+
     if (mounted) {
       setState(() {
-        _isEditing = false;
-        _isSaved = true;
-        _successMessage = 'Lưu thành công';
-        Future.delayed(const Duration(seconds: 2), () {
-          if (mounted) {
-            setState(() {
-              _successMessage = null;
-            });
-          }
-        });
+        _teamMappings = validMappings;
+        _isEditingMapping = false;
+        _successMessage = 'Lưu mapping thành công';
       });
     }
-    print('Saved selected teams for user $_userId: $_selectedTeams');
+
+    Future.delayed(const Duration(seconds: 2), () {
+      if (mounted) {
+        setState(() {
+          _successMessage = null;
+        });
+      }
+    });
+
+    print('Saved team mappings: ${validMappings.map((e) => "${e.label} -> ${e.line}").toList()}');
   }
 
   void _navigateToLogin() {
     Navigator.pushReplacementNamed(context, '/login');
   }
 
-  void _confirmSelection() {
-    if (mounted) {
-      setState(() {
-        _selectedTeams = _tempSelectedTeams.toSet();
-        _isEditing = true;
-        _isSaved = false;
-      });
-    }
-    print('Confirmed selected teams: $_selectedTeams');
-    Navigator.of(context).pop();
+  void _startEditing() {
+    setState(() {
+      _isEditingMapping = true;
+    });
   }
 
-  void _showMultiSelectDropdown(BuildContext context) {
-    if (_teams.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Không có tổ nào để chọn.')),
-      );
-      return;
+  void _cancelEditing() async {
+    await _loadTeamMappings();
+    if (mounted) {
+      setState(() {
+        _isEditingMapping = false;
+      });
     }
+  }
 
-    _tempSelectedTeams = _selectedTeams.toSet();
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('Chọn tổ'),
-          content: StatefulBuilder(
-            builder: (BuildContext context, StateSetter setDialogState) {
-              return SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    ..._teams.map((String team) {
-                      return CheckboxListTile(
-                        title: Text('Tổ may $team'),
-                        value: _tempSelectedTeams.contains(team),
-                        onChanged: (bool? value) {
-                          setDialogState(() {
-                            if (value == true) {
-                              _tempSelectedTeams.add(team);
-                            } else {
-                              _tempSelectedTeams.remove(team);
-                            }
-                          });
-                        },
-                        controlAffinity: ListTileControlAffinity.leading,
-                      );
-                    }).toList(),
-                    const SizedBox(height: 10),
-                    ElevatedButton(
-                      onPressed: _confirmSelection,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.blue[800],
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                      ),
-                      child: const Text('OK'),
-                    ),
-                  ],
-                ),
-              );
-            },
-          ),
-        );
-      },
+  void _addMappingRow() {
+    setState(() {
+      _teamMappings.add(
+        TeamMapping(label: '', line: _getNextAvailableLine()),
+      );
+      _isEditingMapping = true;
+    });
+  }
+
+  int _getNextAvailableLine() {
+    final used = _teamMappings.map((e) => e.line).toSet();
+    for (int i = 1; i <= 50; i++) {
+      if (!used.contains(i)) return i;
+    }
+    return 1;
+  }
+
+  void _removeMappingRow(int index) {
+    setState(() {
+      _teamMappings.removeAt(index);
+    });
+  }
+
+  void _updateMappingLabel(int index, String value) {
+    setState(() {
+      _teamMappings[index] = _teamMappings[index].copyWith(label: value);
+    });
+  }
+
+  void _updateMappingLine(int index, int value) {
+    setState(() {
+      _teamMappings[index] = _teamMappings[index].copyWith(line: value);
+    });
+  }
+
+  Widget _buildInfoRow(IconData icon, String label, String value) {
+    return Row(
+      children: [
+        Icon(icon, color: Colors.blue[800], size: 24),
+        const SizedBox(width: 12),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              label,
+              style: const TextStyle(
+                fontSize: 14,
+                color: Colors.grey,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              value,
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: Colors.black87,
+              ),
+            ),
+          ],
+        ),
+      ],
     );
   }
 
-  void _startEditing() {
-    if (mounted) {
-      setState(() {
-        _isEditing = true;
-        _isSaved = false;
-        _tempSelectedTeams = _selectedTeams.toSet();
-      });
-    }
+  Widget _buildMappingRow(int index) {
+    final item = _teamMappings[index];
+    final textController = TextEditingController(text: item.label)
+      ..selection = TextSelection.fromPosition(
+        TextPosition(offset: item.label.length),
+      );
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            flex: 5,
+            child: TextFormField(
+              controller: textController,
+              enabled: _isEditingMapping,
+              decoration: InputDecoration(
+                labelText: 'Tên hiển thị',
+                hintText: 'Ví dụ: 30, 28-2, Tổ ĐH 1',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                filled: true,
+                fillColor: _isEditingMapping ? Colors.white : Colors.grey[100],
+              ),
+              onChanged: (value) => _updateMappingLabel(index, value),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: Icon(
+              Icons.arrow_forward,
+              color: Colors.blue[800],
+              size: 28,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            flex: 3,
+            child: DropdownButtonFormField<int>(
+              value: item.line >= 1 && item.line <= 50 ? item.line : null,
+              decoration: InputDecoration(
+                labelText: 'Line',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                filled: true,
+                fillColor: _isEditingMapping ? Colors.white : Colors.grey[100],
+              ),
+              items: List.generate(50, (i) => i + 1)
+                  .map(
+                    (line) => DropdownMenuItem<int>(
+                      value: line,
+                      child: Text('$line'),
+                    ),
+                  )
+                  .toList(),
+              onChanged: _isEditingMapping
+                  ? (value) {
+                      if (value != null) {
+                        _updateMappingLine(index, value);
+                      }
+                    }
+                  : null,
+            ),
+          ),
+          const SizedBox(width: 6),
+          if (_isEditingMapping)
+            IconButton(
+              onPressed: () => _removeMappingRow(index),
+              icon: const Icon(Icons.delete, color: Colors.red),
+            ),
+        ],
+      ),
+    );
   }
 
-  @override
-  void dispose() {
-    super.dispose();
+  Widget _buildMappingPreview() {
+    if (_teamMappings.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 12),
+        child: Text(
+          'Chưa có tổ nào',
+          style: TextStyle(fontSize: 15, color: Colors.grey),
+        ),
+      );
+    }
+
+    return Column(
+      children: _teamMappings.map((item) {
+        return Container(
+          margin: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: Colors.grey.shade300),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  item.label,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              //Icon(Icons.arrow_forward, color: Colors.blue[700]),
+              const SizedBox(width: 8),
+              /*Text(
+                'line${item.line}',
+                style: TextStyle(
+                  fontSize: 15,
+                  color: Colors.green[700],
+                  fontWeight: FontWeight.bold,
+                ),
+              ),*/
+            ],
+          ),
+        );
+      }).toList(),
+    );
   }
 
   @override
@@ -250,7 +580,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 padding: const EdgeInsets.all(16.0),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
                   children: [
                     const Text(
                       'Thông tin tài khoản',
@@ -272,187 +601,150 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             _buildInfoRow(Icons.person, 'Họ tên', _name),
                             const Divider(height: 20),
                             _buildInfoRow(Icons.group, 'Phòng ban', _tenPhongBan),
+                            const Divider(height: 20),
+                            _buildInfoRow(Icons.factory, 'Chi nhánh', _maChiNhanh),
+                            const Divider(height: 20),
+                            _buildInfoRow(Icons.location_city, 'Site', _siteId),
                           ],
                         ),
                       ),
                     ),
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 24),
                     const Text(
-                      'Tổ làm việc',
+                      //'Mapping tổ → line AGV',
+                      'Chọn tổ',
                       style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
                         color: Colors.black87,
                       ),
                     ),
-                    const SizedBox(height: 10),
-                    GestureDetector(
-                      onTap: () => _showMultiSelectDropdown(context),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-                        decoration: BoxDecoration(
-                          border: Border.all(color: Colors.grey),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              _selectedTeams.isEmpty ? 'Chọn tổ' : ' ${_selectedTeams.length} tổ',
-                              style: TextStyle(
-                                color: _selectedTeams.isEmpty ? Colors.grey : Colors.black87,
-                                fontSize: 16,
-                              ),
-                            ),
-                            const Icon(Icons.arrow_drop_down, color: Colors.grey),
-                          ],
-                        ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Chọn tổ phụ trách',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.grey[700],
                       ),
                     ),
-                    const SizedBox(height: 20),
-                    if (_selectedTeams.isNotEmpty) ...[
-                      const Text(
-                        'Danh sách tổ phụ trách',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.black87,
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          border: Border.all(color: Colors.grey),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
+                    const SizedBox(height: 16),
+                    Card(
+                      elevation: 4,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
                         child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             if (_successMessage != null)
                               Padding(
-                                padding: const EdgeInsets.only(bottom: 10),
+                                padding: const EdgeInsets.only(bottom: 12),
                                 child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
-                                    const Icon(
-                                      Icons.check_circle,
-                                      color: Colors.green,
-                                      size: 24,
-                                    ),
+                                    const Icon(Icons.check_circle, color: Colors.green),
                                     const SizedBox(width: 8),
                                     Text(
                                       _successMessage!,
                                       style: const TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.bold,
                                         color: Colors.green,
+                                        fontWeight: FontWeight.bold,
                                       ),
                                     ),
                                   ],
                                 ),
                               ),
-                            ListView.builder(
-                              shrinkWrap: true,
-                              physics: const NeverScrollableScrollPhysics(),
-                              itemCount: _selectedTeams.length,
-                              itemBuilder: (context, index) {
-                                final team = _selectedTeams.elementAt(index);
-                                return ListTile(
-                                  title: Text('Tổ may $team'),
-                                  trailing: _isEditing
-                                      ? ElevatedButton(
-                                          onPressed: () {
-                                            if (mounted) {
-                                              setState(() {
-                                                _selectedTeams.remove(team);
-                                                _tempSelectedTeams.remove(team);
-                                              });
-                                            }
-                                          },
-                                          style: ElevatedButton.styleFrom(
-                                            backgroundColor: Colors.red,
-                                            foregroundColor: Colors.white,
-                                            shape: RoundedRectangleBorder(
-                                              borderRadius: BorderRadius.circular(8),
-                                            ),
-                                          ),
-                                          child: const Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              Icon(Icons.delete, color: Colors.white, size: 18),
-                                              SizedBox(width: 4),
-                                              Text('Xóa'),
-                                            ],
-                                          ),
-                                        )
-                                      : null,
-                                );
-                              },
-                            ),
-                            const SizedBox(height: 10),
-                            if (_isEditing)
-                              ElevatedButton(
-                                onPressed: _saveSelectedTeams,
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.blue[800],
-                                  foregroundColor: Colors.white,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(8),
+                            if (_isEditingMapping) ...[
+                              ...List.generate(_teamMappings.length, (index) => _buildMappingRow(index)),
+                              const SizedBox(height: 10),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: ElevatedButton.icon(
+                                      onPressed: _addMappingRow,
+                                      icon: const Icon(Icons.add),
+                                      label: const Text('Thêm dòng'),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.orange,
+                                        foregroundColor: Colors.white,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(8),
+                                        ),
+                                      ),
+                                    ),
                                   ),
-                                ),
-                                child: const Text('Lưu'),
+                                ],
                               ),
-                            if (_isSaved && !_isEditing)
-                              ElevatedButton(
-                                onPressed: _startEditing,
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.blue[800],
-                                  foregroundColor: Colors.white,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(8),
+                              const SizedBox(height: 12),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: OutlinedButton(
+                                      onPressed: _cancelEditing,
+                                      child: const Text('Hủy'),
+                                    ),
                                   ),
-                                ),
-                                child: const Text('Sửa'),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: ElevatedButton(
+                                      onPressed: _saveTeamMappings,
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.blue[800],
+                                        foregroundColor: Colors.white,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(8),
+                                        ),
+                                      ),
+                                      child: const Text('Lưu'),
+                                    ),
+                                  ),
+                                ],
                               ),
+                            ] else ...[
+                              _buildMappingPreview(),
+                              const SizedBox(height: 12),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: ElevatedButton.icon(
+                                      onPressed: _authenticateAndStartEditing,
+                                      icon: const Icon(Icons.edit),
+                                      label: const Text('Sửa'),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.blue[800],
+                                        foregroundColor: Colors.white,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(8),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: ElevatedButton.icon(
+                                      onPressed: _authenticateAndAddMapping,
+                                      icon: const Icon(Icons.add),
+                                      label: const Text('Thêm'),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.orange,
+                                        foregroundColor: Colors.white,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(8),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
                           ],
                         ),
                       ),
-                    ],
-                    const SizedBox(height: 20),
+                    ),
+                    const SizedBox(height: 24),
                   ],
                 ),
               ),
             ),
-    );
-  }
-
-  Widget _buildInfoRow(IconData icon, String label, String value) {
-    return Row(
-      children: [
-        Icon(icon, color: Colors.blue[800], size: 24),
-        const SizedBox(width: 12),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              label,
-              style: const TextStyle(
-                fontSize: 14,
-                color: Colors.grey,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              value,
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: Colors.black87,
-              ),
-            ),
-          ],
-        ),
-      ],
     );
   }
 }

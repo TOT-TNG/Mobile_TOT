@@ -5,6 +5,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'package:intl/intl.dart';
 import 'package:visibility_detector/visibility_detector.dart';
+import 'dart:convert';
+import 'team_mapping.dart';
 
 class AGVManagementScreen extends StatefulWidget {
   const AGVManagementScreen({super.key});
@@ -23,6 +25,7 @@ class _AGVManagementScreenState extends State<AGVManagementScreen> with TickerPr
   String _lastUpdated = '';
   String _userId = '';
   String _siteId = ''; // lưu tên đơn vị
+  List<TeamMapping> _teamMappings = [];
   final Map<String, String?> _selectedTeam = {};
   final Map<String, TextEditingController> _newIpControllers = {};
   final Map<String, TextEditingController> _newPortControllers = {};
@@ -89,6 +92,49 @@ String normalizeLatinKey(String input, {bool upper = true}) {
 
   return upper ? s.toUpperCase() : s;
 }
+
+String get _mappingPrefsKey {
+  final uid = _userId.isNotEmpty ? _userId : 'guest';
+  final sid = _siteId.isNotEmpty ? _siteId : 'default';
+  return 'team_mappings_${uid}_$sid';
+}
+
+Future<void> _loadTeamMappings() async {
+  final prefs = await SharedPreferences.getInstance();
+  final raw = prefs.getString(_mappingPrefsKey);
+
+  if (raw == null || raw.isEmpty) {
+    setState(() {
+      _teamMappings = [];
+      _selectedTeams = [];
+    });
+    print('No team mappings found for key $_mappingPrefsKey');
+    return;
+  }
+
+  try {
+    final List<dynamic> decoded = jsonDecode(raw);
+    final mappings = decoded
+        .map((e) => TeamMapping.fromJson(Map<String, dynamic>.from(e)))
+        .where((e) => e.label.trim().isNotEmpty && e.line >= 1 && e.line <= 50)
+        .toList();
+
+    mappings.sort((a, b) => a.line.compareTo(b.line));
+
+    setState(() {
+      _teamMappings = mappings;
+      _selectedTeams = mappings.map((e) => e.label.trim()).toList();
+    });
+
+    print('Loaded team mappings: ${mappings.map((e) => "${e.label} -> ${e.line}").toList()}');
+  } catch (e) {
+    print('Error loading team mappings: $e');
+    setState(() {
+      _teamMappings = [];
+      _selectedTeams = [];
+    });
+  }
+}
   // Mapping cho SC3
   /*final Map<String, int> _sc3LineMapping = {
     "32":    1,
@@ -135,7 +181,7 @@ String normalizeLatinKey(String input, {bool upper = true}) {
     "15":   42,
   };*/
 
-  final Map<String, int> _sc3LineMapping = {
+  /*final Map<String, int> _sc3LineMapping = {
     "1":    1,
     "2":    2,
     "3":  3,
@@ -178,7 +224,7 @@ String normalizeLatinKey(String input, {bool upper = true}) {
     "40":   40,
     "41": 41,
     "42":   42,
-  };
+  };*/
 
   /*String _getApiLocation(String selectedTeam, String siteId) {
     if (siteId != "SC3") {
@@ -209,26 +255,22 @@ String normalizeLatinKey(String input, {bool upper = true}) {
   }*/
 
 String _getApiLocation(String selectedTeam, String siteId) {
-  final normalizedSite = normalizeLatinKey(siteId);
-  final teamRaw = selectedTeam.trim();
+  final normalizedSelected = normalizeLatinKey(selectedTeam, upper: false).trim();
 
-  // Chuẩn hoá team để xử lý trường hợp có dấu/space
-  final team = normalizeLatinKey(teamRaw, upper: false).trim();
+  final matched = _teamMappings.where((m) {
+    return normalizeLatinKey(m.label, upper: false).trim() == normalizedSelected;
+  }).toList();
 
-  // Nếu team là số (1..42...) thì build "line{team}"
-  final teamNum = int.tryParse(team);
+  if (matched.isNotEmpty) {
+    return 'line${matched.first.line}';
+  }
+
+  final teamNum = int.tryParse(selectedTeam.trim());
   if (teamNum != null) {
     return 'line$teamNum';
   }
 
-  // Nếu site SC3 và team không phải số, thử mapping (trường hợp team dạng 28-2...)
-  if (normalizedSite == 'SC3') {
-    final lineNum = _sc3LineMapping[team];
-    if (lineNum != null) return 'line$lineNum';
-  }
-
-  // fallback cuối: trả về team dạng text (nhưng nhiều khả năng server vẫn reject)
-  return team.toLowerCase();
+  return selectedTeam.trim().toLowerCase();
 }
 
   @override
@@ -242,12 +284,12 @@ String _getApiLocation(String selectedTeam, String siteId) {
   }
 
   Future<void> _initializeData() async {
-    await _loadUserInfo();
-    await _loadSelectedTeams();
-    await _loadSiteId();
-    await _loadAGVs();
-    await _fetchAGVsAndStatus();
-  }
+  await _loadUserInfo();
+  await _loadSiteId();
+  await _loadTeamMappings();
+  await _loadAGVs();
+  await _fetchAGVsAndStatus();
+}
 
   Future<void> _loadUserInfo() async {
     final prefs = await SharedPreferences.getInstance();
@@ -1555,7 +1597,10 @@ String _getApiLocation(String selectedTeam, String siteId) {
                             }),
                             onChanged: (ngatuId) {
                               if (ngatuId != null) {
-                                _showResetNgatuDialog(); // Gọi hàm chọn ngã tư
+                                setState(() {
+                                  _selectedNgatuId = ngatuId;
+                                });
+                                _showSelectAgvDialog();
                               }
                             },
                           ),
