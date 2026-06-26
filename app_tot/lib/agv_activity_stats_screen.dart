@@ -73,7 +73,7 @@ class _AGVActivityStatsScreenState extends State<AGVActivityStatsScreen> {
         queryParameters['endDate'] = DateFormat('yyyy-MM-dd').format(_endDate!);
       }
 
-      final uri = Uri.parse('http://103.179.191.249:7000/api/agv/agv-time').replace(queryParameters: queryParameters);
+      final uri = Uri.parse('http://103.101.161.216:7000/api/agv/agv-time').replace(queryParameters: queryParameters);
       final response = await http.get(uri).timeout(const Duration(seconds: 10));
 
       print('API Response: ${response.body}');

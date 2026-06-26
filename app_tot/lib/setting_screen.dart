@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'team_mapping.dart';
+import 'services/api_service.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -17,6 +18,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String _maChiNhanh = 'Unknown';
   String _siteId = 'default';
   static const String _mappingEditPassword = 'TNG12345';
+
+  // Server URL config
+  final _serverUrlCtrl = TextEditingController();
+  bool _isTestingServer = false;
+  String? _serverTestResult;
+  bool _isEditingServerUrl = false;
+
+  // Gateway Key config
+  final _gatewayKeyCtrl = TextEditingController();
+  bool _isEditingGatewayKey = false;
+
+  // Factory (map) selection
+  List<Map<String, dynamic>> _maps = [];
+  String? _selectedMapId;
+  bool _isLoadingMaps = false;
+  String? _mapsLoadError;
 
   List<TeamMapping> _teamMappings = [];
 
@@ -81,12 +98,64 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _initializeData() async {
     await _loadUserInfo();
     await _loadTeamMappings();
-
+    final url = await ApiService.baseUrl;
+    final key = await ApiService.gatewayKey;
+    final prefs = await SharedPreferences.getInstance();
     if (mounted) {
+      _serverUrlCtrl.text = url;
+      _gatewayKeyCtrl.text = key ?? '';
       setState(() {
+        _selectedMapId = prefs.getString('selected_map_id');
         _isUserInfoLoaded = true;
       });
     }
+    _loadMaps();
+  }
+
+  Future<void> _loadMaps() async {
+    if (mounted) setState(() { _isLoadingMaps = true; _mapsLoadError = null; });
+    try {
+      final maps = await ApiService.getMaps();
+      if (mounted) setState(() { _maps = maps; _isLoadingMaps = false; });
+    } catch (_) {
+      if (mounted) setState(() {
+        _isLoadingMaps = false;
+        _mapsLoadError = 'Không tải được danh sách nhà máy.\nKiểm tra kết nối máy chủ.';
+      });
+    }
+  }
+
+  Future<void> _selectMap(String mapId) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('selected_map_id', mapId);
+    if (mounted) setState(() => _selectedMapId = mapId);
+  }
+
+  Future<void> _saveServerUrl() async {
+    final url = _serverUrlCtrl.text.trim();
+    if (url.isEmpty || !url.startsWith('http')) {
+      setState(() => _serverTestResult = 'URL không hợp lệ (phải bắt đầu bằng http://)');
+      return;
+    }
+    setState(() {
+      _isTestingServer = true;
+      _serverTestResult = null;
+    });
+    await ApiService.setBaseUrl(url);
+    final ok = await ApiService.ping();
+    if (mounted) {
+      setState(() {
+        _isTestingServer = false;
+        _isEditingServerUrl = false;
+        _serverTestResult = ok ? 'Kết nối thành công!' : 'Không thể kết nối. Kiểm tra IP/port và server.';
+      });
+    }
+  }
+
+  Future<void> _authenticateAndEditServerUrl() async {
+    final ok = await _showPasswordDialog();
+    if (!ok) return;
+    if (mounted) setState(() => _isEditingServerUrl = true);
   }
 
   Future<bool> _showPasswordDialog() async {
@@ -106,7 +175,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 const Text(
-                  'Vui lòng nhập mật khẩu để chỉnh sửa mapping.',
+                  'Vui lòng nhập mật khẩu.',
                   style: TextStyle(fontSize: 14),
                 ),
                 const SizedBox(height: 12),
@@ -547,6 +616,18 @@ Future<void> _authenticateAndAddMapping() async {
     );
   }
 
+  Future<void> _saveGatewayKey() async {
+    await ApiService.setGatewayKey(_gatewayKeyCtrl.text.trim());
+    if (mounted) setState(() => _isEditingGatewayKey = false);
+  }
+
+  @override
+  void dispose() {
+    _serverUrlCtrl.dispose();
+    _gatewayKeyCtrl.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -610,6 +691,318 @@ Future<void> _authenticateAndAddMapping() async {
                       ),
                     ),
                     const SizedBox(height: 24),
+                    // ── Server URL section ─────────────────────────────────
+                    const Text(
+                      'Kết nối máy chủ',
+                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.black87),
+                    ),
+                    const SizedBox(height: 12),
+                    Card(
+                      elevation: 4,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Locked view
+                            if (!_isEditingServerUrl) ...[
+                              Row(
+                                children: [
+                                  const Icon(Icons.dns_outlined, color: Colors.blueGrey, size: 20),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        const Text('URL máy chủ AGVmqtt',
+                                            style: TextStyle(fontSize: 12, color: Colors.grey)),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          _serverUrlCtrl.text.isNotEmpty
+                                              ? _serverUrlCtrl.text
+                                              : '(chưa cấu hình)',
+                                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const Icon(Icons.lock_outline, size: 16, color: Colors.grey),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              SizedBox(
+                                width: double.infinity,
+                                child: OutlinedButton.icon(
+                                  icon: const Icon(Icons.edit, size: 16),
+                                  label: const Text('Sửa địa chỉ'),
+                                  onPressed: _authenticateAndEditServerUrl,
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: Colors.blue[800],
+                                    side: BorderSide(color: Colors.blue[300]!),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                  ),
+                                ),
+                              ),
+                            ],
+
+                            // Unlocked edit view
+                            if (_isEditingServerUrl) ...[
+                              Row(
+                                children: [
+                                  const Icon(Icons.lock_open, size: 16, color: Colors.orange),
+                                  const SizedBox(width: 6),
+                                  Text('Chế độ chỉnh sửa',
+                                      style: TextStyle(fontSize: 12, color: Colors.orange[700], fontWeight: FontWeight.w600)),
+                                ],
+                              ),
+                              const SizedBox(height: 10),
+                              TextFormField(
+                                controller: _serverUrlCtrl,
+                                autofocus: true,
+                                decoration: InputDecoration(
+                                  labelText: 'URL máy chủ AGVmqtt',
+                                  hintText: 'http://192.168.0.86:8000',
+                                  prefixIcon: const Icon(Icons.dns_outlined),
+                                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                                  filled: true,
+                                  fillColor: Colors.white,
+                                ),
+                                keyboardType: TextInputType.url,
+                              ),
+                              const SizedBox(height: 12),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: OutlinedButton(
+                                      onPressed: () => setState(() {
+                                        _isEditingServerUrl = false;
+                                        _serverTestResult = null;
+                                      }),
+                                      child: const Text('Hủy'),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: ElevatedButton.icon(
+                                      icon: _isTestingServer
+                                          ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                                          : const Icon(Icons.wifi_tethering, size: 18),
+                                      label: Text(_isTestingServer ? 'Đang kiểm tra…' : 'Lưu & Kiểm tra'),
+                                      onPressed: _isTestingServer ? null : _saveServerUrl,
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.blue[800],
+                                        foregroundColor: Colors.white,
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+
+                            // Test result (shown in both states)
+                            if (_serverTestResult != null) ...[
+                              const SizedBox(height: 10),
+                              Row(
+                                children: [
+                                  Icon(
+                                    _serverTestResult!.contains('thành công') ? Icons.check_circle : Icons.error_outline,
+                                    color: _serverTestResult!.contains('thành công') ? Colors.green : Colors.red,
+                                    size: 16,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Expanded(
+                                    child: Text(
+                                      _serverTestResult!,
+                                      style: TextStyle(
+                                        color: _serverTestResult!.contains('thành công') ? Colors.green[700] : Colors.red[700],
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+
+                    // ── Gateway Key section ────────────────────────────────
+                    const Text(
+                      'Gateway Key',
+                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.black87),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Bỏ trống nếu kết nối trực tiếp nội bộ (không qua cloud)',
+                      style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                    ),
+                    const SizedBox(height: 12),
+                    Card(
+                      elevation: 4,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (!_isEditingGatewayKey) ...[
+                              Row(
+                                children: [
+                                  const Icon(Icons.vpn_key_outlined, color: Colors.blueGrey, size: 20),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        const Text('Key nhà máy',
+                                            style: TextStyle(fontSize: 12, color: Colors.grey)),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          _gatewayKeyCtrl.text.isNotEmpty
+                                              ? _gatewayKeyCtrl.text
+                                              : '(chưa cấu hình — kết nối nội bộ)',
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w600,
+                                            color: _gatewayKeyCtrl.text.isNotEmpty
+                                                ? Colors.black87
+                                                : Colors.grey,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const Icon(Icons.lock_outline, size: 16, color: Colors.grey),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              SizedBox(
+                                width: double.infinity,
+                                child: OutlinedButton.icon(
+                                  icon: const Icon(Icons.edit, size: 16),
+                                  label: const Text('Sửa Gateway Key'),
+                                  onPressed: () async {
+                                    final ok = await _showPasswordDialog();
+                                    if (ok && mounted) setState(() => _isEditingGatewayKey = true);
+                                  },
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: Colors.blue[800],
+                                    side: BorderSide(color: Colors.blue[300]!),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                  ),
+                                ),
+                              ),
+                            ],
+                            if (_isEditingGatewayKey) ...[
+                              Row(
+                                children: [
+                                  const Icon(Icons.lock_open, size: 16, color: Colors.orange),
+                                  const SizedBox(width: 6),
+                                  Text('Chế độ chỉnh sửa',
+                                      style: TextStyle(fontSize: 12, color: Colors.orange[700], fontWeight: FontWeight.w600)),
+                                ],
+                              ),
+                              const SizedBox(height: 10),
+                              TextFormField(
+                                controller: _gatewayKeyCtrl,
+                                autofocus: true,
+                                decoration: InputDecoration(
+                                  labelText: 'Gateway Key',
+                                  hintText: 'KEY_TNG_VietDuc',
+                                  prefixIcon: const Icon(Icons.vpn_key_outlined),
+                                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                                  filled: true,
+                                  fillColor: Colors.white,
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: OutlinedButton(
+                                      onPressed: () => setState(() => _isEditingGatewayKey = false),
+                                      child: const Text('Hủy'),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: ElevatedButton.icon(
+                                      icon: const Icon(Icons.save, size: 18),
+                                      label: const Text('Lưu'),
+                                      onPressed: _saveGatewayKey,
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.blue[800],
+                                        foregroundColor: Colors.white,
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+
+                    // ── Factory (map) selection ────────────────────────────
+                    const Text(
+                      'Nhà máy',
+                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.black87),
+                    ),
+                    const SizedBox(height: 12),
+                    Card(
+                      elevation: 4,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.factory_outlined, color: Colors.blueGrey, size: 20),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _isLoadingMaps
+                                  ? const Row(children: [
+                                      SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)),
+                                      SizedBox(width: 10),
+                                      Text('Đang tải...', style: TextStyle(color: Colors.grey)),
+                                    ])
+                                  : _mapsLoadError != null
+                                      ? Text(_mapsLoadError!, style: TextStyle(color: Colors.red[400], fontSize: 13))
+                                      : DropdownButtonHideUnderline(
+                                          child: DropdownButton<String>(
+                                            isExpanded: true,
+                                            hint: const Text('Chọn nhà máy...'),
+                                            value: _selectedMapId,
+                                            items: _maps.map((m) {
+                                              final id = m['id']?.toString() ?? m['map_id']?.toString() ?? '';
+                                              final name = m['name']?.toString() ?? 'Map $id';
+                                              return DropdownMenuItem(value: id, child: Text(name));
+                                            }).toList(),
+                                            onChanged: (v) { if (v != null) _selectMap(v); },
+                                          ),
+                                        ),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.refresh, size: 18),
+                              tooltip: 'Tải lại',
+                              onPressed: _isLoadingMaps ? null : _loadMaps,
+                              color: Colors.blue[700],
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+
+                    // ─────────────────────────────────────────────────────────
                     const Text(
                       //'Mapping tổ → line AGV',
                       'Chọn tổ',

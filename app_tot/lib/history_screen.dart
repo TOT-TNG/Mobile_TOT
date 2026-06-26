@@ -141,7 +141,7 @@ class _HistoryScreenState extends State<HistoryScreen> with SingleTickerProvider
       final endDate = selectedDateRange?.end ?? DateTime.now();
       final startOfDay = DateTime(startDate.year, startDate.month, startDate.day, 0, 0, 0);
       final endOfDay = DateTime(endDate.year, endDate.month, endDate.day, 23, 59, 59, 999);
-      final uri = Uri.parse('http://103.179.191.249:7000/api/agv/get-delivery-history').replace(
+      final uri = Uri.parse('http://103.101.161.216:7000/api/agv/get-delivery-history').replace(
         queryParameters: {
           if (searchMaterialCode.isNotEmpty) 'materialCode': searchMaterialCode,
           if (searchColor.isNotEmpty) 'mColors': searchColor,

@@ -152,7 +152,7 @@ class _TaskExecutedScreenState extends State<TaskExecutedScreen> with TickerProv
             'teamName': normalizedTenBoPhan,
           };
 
-          final uri = Uri.parse('http://103.179.191.249:7000/api/agv/get-finished-product').replace(queryParameters: queryParameters);
+          final uri = Uri.parse('http://103.101.161.216:7000/api/agv/get-finished-product').replace(queryParameters: queryParameters);
           print('Fetching status for task: $uri');
 
           try {
@@ -720,7 +720,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('token') ?? '';
       final response = await http.get(
-        Uri.parse('http://103.179.191.249:7000/api/agv/get-agv-status'),
+        Uri.parse('http://103.101.161.216:7000/api/agv/get-agv-status'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'JWT $token',
@@ -805,7 +805,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
         'teamName': normalizedTenBoPhan,
       };
 
-      final uri = Uri.parse('http://103.179.191.249:7000/api/agv/get-finished-product').replace(queryParameters: queryParameters);
+      final uri = Uri.parse('http://103.101.161.216:7000/api/agv/get-finished-product').replace(queryParameters: queryParameters);
       print('Fetching issued quantity: $uri');
 
       final response = await http.get(
@@ -967,7 +967,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     try {
       final token = prefs.getString('token') ?? '';
       final response = await http.post(
-        Uri.parse('http://103.179.191.249:7000/api/agv/update-finished-product'),
+        Uri.parse('http://103.101.161.216:7000/api/agv/update-finished-product'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'JWT $token',
